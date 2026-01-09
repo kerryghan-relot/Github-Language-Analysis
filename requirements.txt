@@ -1,5 +1,7 @@
 pandas 
 mlflow==2.2.2
+requests
+dotenv
 notebook
 numpy
 scikit-learn
