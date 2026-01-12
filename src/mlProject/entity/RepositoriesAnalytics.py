@@ -1,7 +1,7 @@
 from collections import defaultdict
 from tqdm import notebook
 import pickle
-import os
+import os, shutil
 from datetime import datetime
 from typing import Dict
 import pandas as pd
@@ -11,17 +11,13 @@ from src.mlProject.entity.RepositorySummary import RepositorySummary
 from src.mlProject.constants.constants import REPOSITORY_FEATURES, SUPPORTED_LANGUAGES
 
 class RepositoriesAnalytics:
-    def __init__(self, client: GitHubClient, dataframe_path: str|None = None):
+    def __init__(self, client: GitHubClient):
         self._client: GitHubClient = client
 
-        if dataframe_path and os.path.exists(dataframe_path):
-            self._repos_summary: pd.DataFrame = pd.read_csv(dataframe_path)
-        else:
-            self._repos_summary: pd.DataFrame = self._create_empty_repository_statistics_dataframe()
-
+        self._repos_summary: pd.DataFrame = self._create_empty_repository_statistics_dataframe()
         self._language_matrices: Dict[str, pd.DataFrame] = {}
 
-        self.existing_repositories: set = set(self._repos_summary["name"].tolist())
+        self.existing_repositories: set = set()
 
     def _create_empty_repository_statistics_dataframe(self) -> pd.DataFrame:
         """
@@ -69,13 +65,18 @@ class RepositoriesAnalytics:
             del self._language_matrices[key]
             self.existing_repositories.remove(key)
 
-    def to_csv(self, folder_path: str) -> None:
+    def to_csv(self, folder_path: str, empty: bool = True) -> None:
         """
         Saves the repository summary DataFrame and the languages DataFrames to CSV files at the specified folder path.
 
         Args:
             folder_path (str): The folder path to save the CSV files
+            empty (bool, optional): Whether to empty the folder if it already exists. Defaults to True.
         """
+        # remove the folder if it already exist
+        if empty and os.path.exists(folder_path):
+            shutil.rmtree(folder_path)
+
         # Create the folder if it doesn't exist
         os.makedirs(folder_path, exist_ok=True)
 
@@ -95,6 +96,45 @@ class RepositoriesAnalytics:
             os.makedirs(repo_folder, exist_ok=True)
             lang_path = os.path.join(repo_folder, f"{repo_name}.csv")
             lang_df.to_csv(lang_path, index=False)
+
+    @classmethod
+    def from_csv(cls, folder_path: str, client: GitHubClient) -> "RepositoriesAnalytics":
+        """
+        Loads the RepositoriesAnalytics object from CSV files at the specified folder path.
+        If the folder is empty, returns an empty RepositoriesAnalytics object.
+
+        Args:
+            folder_path (str): The folder path to load the CSV files from
+            client (GitHubClient): The GitHub client to use for API calls
+        Returns:
+            RepositoriesAnalytics: The loaded RepositoriesAnalytics object
+        """
+        instance = cls(client)
+
+        # Return early if folder is empty
+        if not os.listdir(folder_path):
+            return instance
+
+        # Load repository summary
+        summary_path = os.path.join(folder_path, "repositories_summary.csv")
+        instance._repos_summary = pd.read_csv(summary_path)
+
+        # Load language matrices
+        languages_folder = os.path.join(folder_path, "language_matrices")
+        for owner in os.listdir(languages_folder):
+            owner_folder = os.path.join(languages_folder, owner)
+            if os.path.isdir(owner_folder):
+                for repo_file in os.listdir(owner_folder):
+                    if repo_file.endswith(".csv"):
+                        repo_name = repo_file[:-4]  # Remove .csv extension
+                        full_name = f"{owner}/{repo_name}"
+                        lang_path = os.path.join(owner_folder, repo_file)
+                        instance._language_matrices[full_name] = pd.read_csv(lang_path)
+
+        # Update existing repositories set
+        instance.existing_repositories = set(instance._repos_summary["name"].tolist())
+
+        return instance
     
     def to_pickle(self, path: str) -> None:
         """
@@ -120,36 +160,38 @@ class RepositoriesAnalytics:
         # Get all statistics
         stats = RepositorySummary(
             name=repo["full_name"],
-            file_counts=client.get_file_count_from_tree(owner=owner, repo_name=repo_name, default_branch=repo["default_branch"]),
-            release_count=client.get_release_count(owner=owner, repo_name=repo_name),
-            size=repo["size"],
-            stars=repo["stargazers_count"],
-            forks=repo["forks_count"],
-            contributor_count=client.get_contributor_count(owner=owner, repo_name=repo_name),
             created_at=datetime.fromisoformat(repo.get("created_at", "")).date(),
             updated_at=datetime.fromisoformat(repo.get("updated_at", "")).date(),
-            total_commits=client.get_commit_count(owner=owner, repo_name=repo_name),
+            file_count=client.get_file_count_from_tree(owner=owner, repo_name=repo_name, default_branch=repo["default_branch"]),
+            release_count=client.get_release_count(owner=owner, repo_name=repo_name),
+            size=repo["size"],
+            star_count=repo["stargazers_count"],
+            fork_count=repo["forks_count"],
+            contributor_count=client.get_contributor_count(owner=owner, repo_name=repo_name),
+            commit_count=client.get_commit_count(owner=owner, repo_name=repo_name),
+            issue_count=client.get_issue_count(owner=owner, repo_name=repo_name),
             topics=repo.get("topics", [])
         )
 
         # Update the dataframe in place
         self._repos_summary.loc[len(self._repos_summary)] = pd.Series(stats.__dict__)
 
-    def _add_language_matrix(self, client: GitHubClient, repo: dict) -> bool:
+    def _add_language_matrix(self, client: GitHubClient, repo: dict, n_releases: int) -> bool:
         """
         Appends the language statistics DataFrame to the internal dictionary for a given repository.
 
         Args:
             client (GitHubClient): The GitHub client to use for API calls
             repo (dict): The repository data from GitHub API
+            n_releases (int): The number of releases to process
         Returns:
             bool: True if at least one release was processed, False otherwise
         """
         # Retrieve necessary information
         owner, repo_name, full_name = repo["owner"]["login"], repo["name"], repo["full_name"]
 
-        # Get 8 time-spaced stable releases
-        releases = client.get_releases(owner, repo_name, stable_only=True, time_spaced=True, number_of_releases=8)
+        # Get n_releases time-spaced stable releases
+        releases = client.get_releases(owner, repo_name, stable_only=True, time_spaced=True, number_of_releases=n_releases)
 
         if not releases:
             return False
@@ -199,21 +241,21 @@ class RepositoriesAnalytics:
 
         return True
 
-    def collect_repository_data_for_search(self, client: GitHubClient, query: str, sort: str, update: bool = False, max_repositories: int = 1000) -> int:
+    def collect_repository_data_for_search(self, client: GitHubClient, query: str, sort: str|None = None, update: bool = False, max_repositories: int = 1000, n_releases: int = 12) -> int:
         """
         Collects repository data for repositories matching the search query.
 
         Args:
             client (GitHubClient): The GitHub client to use for API calls
             query (str): The search query to find repositories
-            sort (str): The sort criteria for the search results
+            sort (str|None): The sort criteria for the search results. Defaults to None.
             update (bool, optional): Whether to update existing repositories. Defaults to False.
             max_repositories (int, optional): Maximum number of repositories to process. Defaults to 1000.
         Returns:
             int: The number of processed repositories
         """
 
-        repositories = client.get_repositories(query=query, sort=sort, page=-1)
+        repositories = client.search_repositories(query=query, sort=sort, page=-1)
 
         processed_repo = 0
 
@@ -226,7 +268,7 @@ class RepositoriesAnalytics:
                 del self[repo["full_name"]]
 
             # Compute and store language matrix
-            any_release = self._add_language_matrix(client, repo)
+            any_release = self._add_language_matrix(client, repo, n_releases)
                 
             # Skip if no release found
             if not any_release:

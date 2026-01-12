@@ -99,7 +99,7 @@ class GitHubClient:
 
         return self._get(url, params=params, cache=cache)
     
-    def get_repositories(self, query: str = "stars:>1000", sort: str|None = "stars", per_page: int = 10, page: int = -1, cache: bool = False) -> List[Dict]:
+    def search_repositories(self, query: str = "stars:>1000", sort: str|None = "stars", per_page: int = 10, page: int = -1, cache: bool = False) -> List[Dict]:
         """
         Searches for repositories on GitHub based on the provided query.
         If page is -1, it retrieves only all the results from all the pages. Hence, the results will not be cached.
@@ -141,7 +141,7 @@ class GitHubClient:
 
             # Retrieve all other pages since we already processed the first one
             for current_page in range(2, last_page_number + 1):
-                repos = self.get_repositories(
+                repos = self.search_repositories(
                     query=query,
                     sort=sort,
                     per_page=100, # Max per_page value for GitHub API
@@ -302,5 +302,25 @@ class GitHubClient:
 
         number_of_commits = self._get_last_page_number(response)
         if number_of_commits != -1: return number_of_commits
+        
+        return len(response.json())
+    
+    def get_issue_count(self, owner: str, repo_name: str, state: str = "all") -> int:
+        """
+        Retrieves the total number of issues for a specific repository.
+
+        Args:
+            owner (str): the owner of the repository
+            repo_name (str): the name of the repository
+            state (str, optional): the state of the issues to count ("open", "closed", "all"). Defaults to "all".
+        Returns:
+            int: The total number of issues in the repository
+        """
+        url = f"{self.base_url}/repos/{owner}/{repo_name}/issues"
+
+        response = self._get(url, params={"per_page": 1, "state": state}, raw=True, cache=False)
+
+        number_of_issues = self._get_last_page_number(response)
+        if number_of_issues != -1: return number_of_issues
         
         return len(response.json())
