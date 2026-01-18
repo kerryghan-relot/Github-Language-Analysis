@@ -1,5 +1,6 @@
 from collections import defaultdict
 from tqdm import notebook
+from urllib.parse import quote
 import pickle
 import os, shutil
 from datetime import datetime
@@ -9,6 +10,7 @@ import pandas as pd
 from src.mlProject.entity.GitHubClient import GitHubClient
 from src.mlProject.entity.RepositorySummary import RepositorySummary
 from src.mlProject.constants.constants import REPOSITORY_FEATURES, SUPPORTED_LANGUAGES
+from src.mlProject.utils.common import log
 
 class RepositoriesAnalytics:
     def __init__(self, client: GitHubClient):
@@ -198,11 +200,14 @@ class RepositoriesAnalytics:
 
         # Process each release to compute the percentage of each language
         for release in releases:
+            # URL-encode the tag name to handle special characters like '#', '?', '/', etc.
+            tag_name = quote(release['tag_name'], safe='')
+            
             # Retrieve the Git Tree recursively from the release tag
             tree_data = client.get_repository(
                 owner, 
                 repo_name, 
-                commit_sha=release['tag_name'], 
+                commit_sha=tag_name, 
                 params={"recursive": "1"}, 
                 cache=False
             )['tree']
@@ -241,7 +246,7 @@ class RepositoriesAnalytics:
 
         return True
 
-    def collect_repository_data_for_search(self, client: GitHubClient, query: str, sort: str|None = None, update: bool = False, max_repositories: int = 1000, n_releases: int = 12) -> int:
+    def collect_repository_data_for_search(self, client: GitHubClient, query: str, sort: str|None = None, update: bool = False, max_repositories: int = 1000, n_releases: int = 12, logging: bool = False) -> int:
         """
         Collects repository data for repositories matching the search query.
 
@@ -251,6 +256,8 @@ class RepositoriesAnalytics:
             sort (str|None): The sort criteria for the search results. Defaults to None.
             update (bool, optional): Whether to update existing repositories. Defaults to False.
             max_repositories (int, optional): Maximum number of repositories to process. Defaults to 1000.
+            n_releases (int, optional): Number of releases to process for language statistics. Defaults to 12.
+            logging (bool, optional): Whether to log progress messages. Defaults to False.
         Returns:
             int: The number of processed repositories
         """
@@ -259,9 +266,10 @@ class RepositoriesAnalytics:
 
         processed_repo = 0
 
-        for repo in notebook.tqdm(repositories[:max_repositories], desc="Processing Repositories"):
+        for repo in notebook.tqdm(repositories[:max_repositories], desc=f"Processing {query}"):
             # Skip if already exists and not updating
             if repo["full_name"] in self and not update:
+                if logging: log(f"Repository {repo['full_name']} already exists. Skipping.", level="INFO")
                 continue
             # If updating, remove existing entry
             if update:
@@ -272,6 +280,7 @@ class RepositoriesAnalytics:
                 
             # Skip if no release found
             if not any_release:
+                if logging: log(f"Repository {repo['full_name']} has no releases. Skipping.", level="WARN")
                 continue
             
             # Get and append repository summary to the internal DataFrame
@@ -279,6 +288,7 @@ class RepositoriesAnalytics:
 
             # Update the set of existing repositories
             self.existing_repositories.add(repo["full_name"])
+            if logging: log(f"Repository {repo['full_name']} processed successfully.", level="INFO")
 
             processed_repo += 1
 

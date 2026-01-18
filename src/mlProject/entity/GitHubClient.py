@@ -82,6 +82,8 @@ class GitHubClient:
     def get_repository(self, owner: str, repo_name: str, commit_sha: str|None = None, params: dict|None = None, cache: bool = False) -> Dict:
         """
         Retrieves a specific repository from GitHub, eventually at a specific commit SHA.
+        When the commit SHA is provided, the Git Tree API is used to retrieve the repository at that commit, 
+        hence the params can include the "recursive" parameter to retrieve the full tree (ie all files in the repository).
 
         Args:
             owner (str): the owner of the repository
@@ -175,7 +177,7 @@ class GitHubClient:
         url: str = f"{self.base_url}/repos/{owner}/{repo_name}/releases"
         releases: List[Dict] = []
 
-        for page in range(1, 1000):  # Arbitrary limit to avoid infinite loops
+        for page in range(1, 101):  # I found out that I cannot retrieve more than 10,000 releases
             params: dict = {
                 "per_page": 100,
                 "page": page
@@ -324,3 +326,31 @@ class GitHubClient:
         if number_of_issues != -1: return number_of_issues
         
         return len(response.json())
+    
+    def get_commit_sha_from_tag(self, owner: str, repo_name: str, tag_name: str) -> str:
+        """
+        UNUSED FUNCTION THAT WAS PREVIOUSLY USED FOR DEBUGGING PURPOSES.
+        
+        Resolves a tag name to its commit SHA using the Git Refs API.
+        Handles both lightweight tags (pointing directly to a commit) and 
+        annotated tags (pointing to a tag object that references a commit).
+
+        Args:
+            owner (str): the owner of the repository
+            repo_name (str): the name of the repository
+            tag_name (str): the name of the tag to resolve
+        Returns:
+            str: The commit SHA that the tag points to
+        """
+        url = f"{self.base_url}/repos/{owner}/{repo_name}/git/ref/tags/{tag_name}"
+        ref_data = self._get(url, cache=False)
+        
+        # Check if it's an annotated tag (points to a tag object, not a commit)
+        if ref_data["object"]["type"] == "tag":
+            # Dereference the tag object to get the commit
+            tag_object_url = ref_data["object"]["url"]
+            tag_data = self._get(tag_object_url, cache=False)
+            return tag_data["object"]["sha"]
+        
+        # Lightweight tag - points directly to commit
+        return ref_data["object"]["sha"]
