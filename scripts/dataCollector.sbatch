@@ -7,14 +7,14 @@
 #   `sbatch scripts/collect_data.sbatch`
 #
 # Slurm directives:
-# - single node, 5 CPUs, 30 GB RAM, 100 hours, email notifications
+# - single node, 8 CPUs, 30 GB RAM, 100 hours, email notifications
 
 #SBATCH --job-name=github_data_collection
 #SBATCH --output=/info/etu/m2/s2403274/MLOps_Bigdata_Projet/Github-Language-Analysis/logs/collection_%j.log
 #SBATCH --error=/info/etu/m2/s2403274/MLOps_Bigdata_Projet/Github-Language-Analysis/logs/collection_%j.err
 #SBATCH --time=100:00:00
 #SBATCH --mem=30G
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=8
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kerryghan.relot.etu@univ-lemans.fr
 

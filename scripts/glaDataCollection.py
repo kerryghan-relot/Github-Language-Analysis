@@ -11,10 +11,10 @@ import os, sys
 print("Setting up system path for parent directory imports...")
 sys.path.append('/info/etu/m2/s2403274/MLOps_Bigdata_Projet/Github-Language-Analysis/')
 
-print("Importing entities from mlProject...")
-from src.mlProject.entity import RepositoriesAnalytics, GitHubClient
 print("Importing logs from mlProject...")
 from src.mlProject.utils.common import log
+print("Importing entities from mlProject...")
+from src.mlProject.entity import RepositoriesAnalytics, GitHubClient
 
 
 log("Loading .env file...")
@@ -26,30 +26,32 @@ log(f"GitHub client initialized with \n      base_url: {client.base_url}\n      
 log("Loading existing data or initializing new RepositoriesAnalytics...")
 analytics = RepositoriesAnalytics.from_csv(folder_path="data", client=client)
 log("RepositoriesAnalytics ready.")
+# queries = [
+#     "gaming",
+#     "machine learning",
+#     "biology",
+#     "cybersecurity",
+#     "web development",
+#     "data science",
+#     "mobile development",
+#     "devops",
+#     "blockchain",
+#     "internet of things",
+#     "artificial intelligence",
+#     "cloud computing",
+#     "virtual reality",
+#     "quantum computing",
+#     "computer vision",
+#     "robotics",
+#     "natural language processing",
+#     "nlp",
+#     "big data",
+#     "niche",
+#     "paris",
+#     "open source",
+#     "ethics"
+# ]
 queries = [
-    "gaming", 
-    "machine learning",
-    "biology", 
-    "cybersecurity", 
-    "web development", 
-    "data science", 
-    "mobile development", 
-    "devops", 
-    "blockchain", 
-    "internet of things",
-    "artificial intelligence",
-    "cloud computing",
-    "virtual reality",
-    "quantum computing",
-    "computer vision",
-    "robotics",
-    "natural language processing",
-    "nlp",
-    "big data",
-    "niche",
-    "paris",
-    "open source",
-    "ethics",
     "privacy",
     "education",
     "healthcare",
@@ -59,7 +61,7 @@ queries = [
     "music",
     "sports",
     "environment",
-    "agriculture"
+    "agriculture",
     "musique",
     "paris",
     "github",
@@ -76,8 +78,8 @@ for query in queries:
     # Collect repositories sorted by stars
     log(f"Processing query: {query} sorted by stars")
     current_processed_count = analytics.collect_repository_data_for_search(
-        client, 
-        query=query, 
+        client,
+        query=query,
         sort="stars",
         n_releases=12,
         logging=True)
@@ -86,11 +88,11 @@ for query in queries:
     log("Saving data to CSV...")
     analytics.to_csv("data")
     log("Data saved.")
-    
+
     # Collect repositories sorted by best matches
     log(f"Processing query: {query} sorted by best matches")
     current_processed_count = analytics.collect_repository_data_for_search(
-        client, 
+        client,
         query=query,
         n_releases=12,
         logging=True)
@@ -99,6 +101,12 @@ for query in queries:
     log("Saving data to CSV...")
     analytics.to_csv("data")
     log("Data saved.")
+
+    # Break if more than 95h have passed
+    elapsed_time = time() - start
+    if elapsed_time > 95 * 3600:
+        log("Stopping data collection to avoid exceeding 100 hours of runtime.", level="WARNING")
+        break
 end = time()
 
 hours = int((end - start) // 3600)

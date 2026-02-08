@@ -1,4 +1,5 @@
 from collections import defaultdict
+import requests
 from tqdm import notebook
 from urllib.parse import quote
 import pickle
@@ -29,7 +30,7 @@ class RepositoriesAnalytics:
             pd.DataFrame: An empty DataFrame with RepositoryStatistics columns
         """
         return pd.DataFrame(columns=REPOSITORY_FEATURES)
-    
+
     def __getitem__(self, key: str) -> RepositorySummary:
         """
         Retrieves the RepositoryStatistics for a given repository name.
@@ -42,7 +43,7 @@ class RepositoriesAnalytics:
         """
         key_stats = self._repos_summary[self._repos_summary["name"] == key]
         return RepositorySummary(**key_stats.iloc[0].to_dict())
-    
+
     def __contains__(self, key: str) -> bool:
         """
         Checks if the repository with the given name exists in the internal DataFrame.
@@ -54,7 +55,7 @@ class RepositoriesAnalytics:
             bool: True if the repository exists, False otherwise
         """
         return key in self.existing_repositories
-    
+
     def __delitem__(self, key: str) -> None:
         """
         Deletes the repository with the given name and its language statistics from the internal DataFrames.
@@ -137,7 +138,7 @@ class RepositoriesAnalytics:
         instance.existing_repositories = set(instance._repos_summary["name"].tolist())
 
         return instance
-    
+
     def to_pickle(self, path: str) -> None:
         """
         Saves the entire object to a pickle file at the specified path.
@@ -192,25 +193,36 @@ class RepositoriesAnalytics:
         # Retrieve necessary information
         owner, repo_name, full_name = repo["owner"]["login"], repo["name"], repo["full_name"]
 
-        # Get n_releases time-spaced stable releases
-        releases = client.get_releases(owner, repo_name, stable_only=True, time_spaced=True, number_of_releases=n_releases)
+        try:
+            # Get n_releases time-spaced stable releases
+            releases = client.get_releases(owner, repo_name, stable_only=True, time_spaced=True, number_of_releases=n_releases)
+        except Exception as e:
+            log(f"Encountered an error for {full_name}. Skipping repository.", level="ERROR")
+            return False # No releases processed due to timeout
 
         if not releases:
             return False
 
+        # Count how many releases were skipped due to 'get' errors
+        skipped_releases = 0
         # Process each release to compute the percentage of each language
         for release in releases:
             # URL-encode the tag name to handle special characters like '#', '?', '/', etc.
             tag_name = quote(release['tag_name'], safe='')
-            
-            # Retrieve the Git Tree recursively from the release tag
-            tree_data = client.get_repository(
-                owner, 
-                repo_name, 
-                commit_sha=tag_name, 
-                params={"recursive": "1"}, 
-                cache=False
-            )['tree']
+
+            try:
+                # Retrieve the Git Tree recursively from the release tag
+                tree_data = client.get_repository(
+                    owner,
+                    repo_name,
+                    commit_sha=tag_name,
+                    params={"recursive": "1"},
+                    cache=False
+                )['tree']
+            except Exception as e:
+                log(f"Encountered an error while retrieving tree for release {tag_name} of {full_name}. Skipping this release.", level="ERROR")
+                skipped_releases += 1
+                continue
 
             # Compute file sizes per language
             file_sizes = defaultdict(int)
@@ -225,7 +237,7 @@ class RepositoriesAnalytics:
 
             # Normalize file sizes
             total_size = sum(file_sizes.values())
-            for ext in file_sizes: 
+            for ext in file_sizes:
                 file_sizes[ext] /= total_size
                 file_sizes[ext] = round(file_sizes[ext], 4)
 
@@ -243,6 +255,10 @@ class RepositoriesAnalytics:
 
             # Replace NaN with 0
             self._language_matrices[full_name].fillna(0, inplace=True)
+
+        if skipped_releases == len(releases):
+            log(f"All releases for {full_name} were skipped due to errors. No language data collected for this repository.", level="ERROR")
+            return False
 
         return True
 
@@ -277,12 +293,12 @@ class RepositoriesAnalytics:
 
             # Compute and store language matrix
             any_release = self._add_language_matrix(client, repo, n_releases)
-                
+
             # Skip if no release found
             if not any_release:
                 if logging: log(f"Repository {repo['full_name']} has no releases. Skipping.", level="WARN")
                 continue
-            
+
             # Get and append repository summary to the internal DataFrame
             self._append_repository_summary(client, repo)
 

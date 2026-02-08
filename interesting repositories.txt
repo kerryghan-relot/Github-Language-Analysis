@@ -1,2 +1,4 @@
 EthicalML/awesome-production-machine-learning  (et d'autres repo de ce compte aussi)
 CleverRaven/Cataclysm-DDA
+ente-io/ente
+ai-robots-txt/ai.robots.txt

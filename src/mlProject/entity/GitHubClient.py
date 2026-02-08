@@ -1,8 +1,10 @@
 import requests
+from requests.exceptions import HTTPError, ConnectionError, Timeout
 from datetime import datetime, timedelta
 from typing import Any, List, Dict
 from time import time, sleep
 import copy
+from src.mlProject.utils.common import log
 
 class GitHubClient:
     def __init__(self, token: str, base_url: str = "https://api.github.com", hourly_rate_limit: int = 5000):
@@ -19,7 +21,7 @@ class GitHubClient:
         self._cached_url: str|None = None
         self._cached_json_result: Any|None = None
 
-    def _get(self, url: str, params: dict|None = None, raw: bool = False, cache: bool = False, **kwargs) -> Any:
+    def _get(self, url: str, params: dict|None = None, raw: bool = False, cache: bool = False, retry: int = 10, **kwargs) -> Any:
         """
         Performs a get request to the provided url and returns the JSON response.
         The header does not need to be provided as it is handled by the class.
@@ -32,6 +34,7 @@ class GitHubClient:
             params (dict, optional): query parameters to include in the request. Defaults to None.
             raw (bool, optional): whether to return the raw response object. Defaults to False. If True, caching is ignored.
             cache (bool, optional): whether to cache the response. Defaults to True.
+            retry (int, optional): number of times to retry the request in case of transient errors. Defaults to 5.
 
         Returns:
             Dict: the JSON response from the API
@@ -40,8 +43,16 @@ class GitHubClient:
         sleep(max(0, self.last_search_time + 3600 / self.hourly_rate_limit - time()))
 
         # Perform the GET request to the GitHub API and raise an error for bad responses
-        response: requests.models.Response = requests.get(url, headers=self.headers, params=params)
-        response.raise_for_status()
+        for i in range(retry):  # Retry up to retry times in case of transient errors
+            try:
+                response: requests.models.Response = requests.get(url, headers=self.headers, params=params)
+                response.raise_for_status()
+                break
+            except Exception as e:
+                log(f"Error during GET request to {url} with params {params}: {e}.\n...Retry {i + 1}/{retry}", level="ERROR")
+                if i >= retry - 1:
+                    raise e
+                sleep(1)
 
         # Parse the JSON response, store it and return it
         self.last_search_time = time()
