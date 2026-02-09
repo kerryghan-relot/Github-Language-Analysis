@@ -37,6 +37,11 @@ If you prefer `conda`, run:
 conda create --name myenv python=3.13
 conda activate myenv
 ```
+You can also simply choose to use uv (that's the prefered method), simply run:
+```bash
+uv sync
+```
+it will automatically use the pyproject.toml and uv.lock files to generate your environnement.
 
 ### 3. Install the required dependencies:
 Once you have created and activated your virtual environment (either pip or conda), run:

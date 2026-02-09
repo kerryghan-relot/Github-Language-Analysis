@@ -355,7 +355,7 @@ class LanguagesAnalytics:
         # Prophet requires the columns to be named 'ds' for the date and 'y' for the value to predict
         model.fit(evolution_df.rename(columns={'date': 'ds', language_extension: 'y'}))
 
-        future = model.make_future_dataframe(periods=future_periods, freq=interval)
+        future = model.make_future_dataframe(periods=future_periods, freq=f"{interval}E")
 
         forecast = model.predict(future)
 
