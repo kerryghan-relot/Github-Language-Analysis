@@ -1,15 +1,18 @@
+from copy import deepcopy
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from math import ceil
 import numpy as np
 from pandas.io.formats.style import Styler
+from prophet import Prophet
 
 from src.mlProject.entity import GitHubClient, RepositoriesAnalytics
 from src.mlProject.constants import SUPPORTED_LANGUAGES
 
 class LanguagesAnalytics:
-    def __init__(self, client: GitHubClient):
-        self.repositories_analytics: RepositoriesAnalytics = RepositoriesAnalytics.from_csv("data", client=client)
+    def __init__(self, client: GitHubClient, folder_path: str = "data"):
+        self.repositories_analytics: RepositoriesAnalytics = RepositoriesAnalytics.from_csv(folder_path, client=client)
         self.merged_df: pd.DataFrame = pd.DataFrame()
         self._supported_languages: set = SUPPORTED_LANGUAGES
 
@@ -140,12 +143,12 @@ class LanguagesAnalytics:
         ], axis=1).set_caption("Summary of Supported Languages Usage in Repositories")
 
 
-    def save_language_usage_summary(self, filename: str = "data/merged_language_matrix.csv") -> None:
+    def save_language_usage_summary(self, filename: str = "data/language_usage_summary.csv") -> None:
         """
         Save the language usage summary DataFrame to a CSV file.
 
         Args:
-            filename (str): The name of the CSV file to save the summary to. Default is "data/merged_language_matrix.csv".
+            filename (str): The name of the CSV file to save the summary to. Default is "data/language_usage_summary.csv".
 
         Returns:
             None: Saves the DataFrame to a CSV file.
@@ -153,6 +156,18 @@ class LanguagesAnalytics:
         languages_summary: pd.DataFrame = self.get_language_usage_summary()
 
         languages_summary.to_csv(filename, index=False)
+
+    def save_merged_language_matrix(self, filename: str = "data/merged_language_matrix.csv") -> None:
+        """
+        Save the merged language matrix DataFrame to a CSV file.
+
+        Args:
+            filename (str): The name of the CSV file to save the merged language matrix to. Default is "data/merged_language_matrix.csv".
+
+        Returns:
+            None: Saves the DataFrame to a CSV file.
+        """
+        self.merged_df.to_csv(filename, index=False)
 
     def plot_language_correlation_matrix(self, separating_lines: bool = True) -> None:
         """
@@ -297,3 +312,83 @@ class LanguagesAnalytics:
         plt.xticks(rotation=90)
         plt.tight_layout()
         plt.show()
+
+    def predict_language_evolution(self, language_extension: str, future_periods: int = 12, interval: str = "M"):
+        """
+        Predicts the future evolution of the percentage of files in a specified language using a simple linear regression model.
+
+        Parameters:
+            language_extension (str): The language extension to predict (e.g., ".py" for Python).
+            future_periods (int): The number of future periods to predict. Default is 12.
+            interval (str): The time interval for grouping the data. Options are : "D" for daily, "W" for weekly, "M" for monthly, "Q" for quarterly, "Y" for yearly, etc. Default is "M" (monthly).
+        """
+        evolution_df = deepcopy(self.merged_df)
+
+        evolution_df['date'] = pd.to_datetime(evolution_df['date']).dt.to_period(interval).dt.to_timestamp()
+
+        evolution_df = evolution_df.groupby('date')[[language_extension]].sum().reset_index()
+
+        model = Prophet()
+        # Prophet requires the columns to be named 'ds' for the date and 'y' for the value to predict
+        model.fit(evolution_df.rename(columns={'date': 'ds', language_extension: 'y'}))
+
+        future = model.make_future_dataframe(periods=future_periods, freq=interval)
+
+        return model.predict(future)
+
+    def plot_language_evolution_prediction(self, language_extension: str, future_periods: int = 12, interval: str = "M", ax: plt.Axes | None = None):
+        """
+        Plots the predicted future evolution of the percentage of files in a specified language.
+
+        Parameters:
+            language_extension (str): The language extension to predict (e.g., ".py" for Python).
+            future_periods (int): The number of future periods to predict. Default is 12.
+            interval (str): The time interval for grouping the data. Options are : "D" for daily, "W" for weekly, "M" for monthly, "Q" for quarterly, "Y" for yearly, etc. Default is "M" (monthly).
+        """
+        evolution_df = deepcopy(self.merged_df)
+
+        evolution_df['date'] = pd.to_datetime(evolution_df['date']).dt.to_period(interval).dt.to_timestamp()
+
+        evolution_df = evolution_df.groupby('date')[[language_extension]].sum().reset_index()
+
+        model = Prophet()
+        # Prophet requires the columns to be named 'ds' for the date and 'y' for the value to predict
+        model.fit(evolution_df.rename(columns={'date': 'ds', language_extension: 'y'}))
+
+        future = model.make_future_dataframe(periods=future_periods, freq=interval)
+
+        forecast = model.predict(future)
+
+        figure = model.plot(forecast, include_legend=True, ax=ax)
+
+        return figure
+
+    def plot_all_languages_predictions(self, future_periods: int = 12, interval: str = "M"):
+        """
+        Plots the predicted future evolution of the percentage of files in all supported languages.
+
+        Parameters:
+            future_periods (int): The number of future periods to predict. Default is 12.
+            interval (str): The time interval for grouping the data. Options are : "D" for daily, "W" for weekly, "M" for monthly, "Q" for quarterly, "Y" for yearly, etc. Default is "M" (monthly).
+        """
+
+        langs = list(self._supported_languages)
+        n = len(langs)
+        sqrt_n = ceil(n**0.5)
+        nrows = sqrt_n if n > sqrt_n * (sqrt_n - 1) else sqrt_n - 1
+        ncols = sqrt_n
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols*10, nrows*6))
+
+        for i in range(nrows):
+            for j in range(ncols):
+                if i*ncols + j >= n:
+                    # Do not display the empty subplots
+                    axes[i][j].axis('off')
+                    continue
+                lang = langs[i*ncols + j]
+                self.plot_language_evolution_prediction(lang, future_periods=future_periods, interval=interval, ax=axes[i][j])
+                axes[i][j].set_title(f"Evolution of {lang} language usage over time with Prophet")
+
+        return fig
+

@@ -14,7 +14,7 @@ The `setup.py` file is used for packaging and distributing the project. It is es
 
 ### 1. Clone the repository:
 ```bash
-git clone https://github.com/kerryghan-relot/Github-Language-Analysis.git  
+git clone https://github.com/kerryghan-relot/Github-Language-Analysis.git
 cd Github-Language-Analysis
 ```
 Or use your favorite tool/IDE to clone the repository.
@@ -42,4 +42,15 @@ conda activate myenv
 Once you have created and activated your virtual environment (either pip or conda), run:
 ```bash
 pip install -r requirements.txt
+```
+
+### 4. Exploring with demos
+Once your environnement is setup properly, you can explore demos in the `./demo/` folder to discover all the capabilities of the project.
+
+### 5. Scripting
+You can also automate the data retrieval via the scripts provided. the `helloWorld` scripts serves just as a test. The `dataCollector.sbatch` and `glaDataCollection.py` are used to actually retrieve data from the API.
+
+Note that in order for you to be able to run the script, you must get an API key and put it in the `.env` file at the root of the project. It should at least contain the following line:
+```
+GITHUB_TOKEN=ghp_***** # Replace with you actual API key
 ```

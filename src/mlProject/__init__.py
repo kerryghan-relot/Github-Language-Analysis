@@ -12,7 +12,7 @@ os.makedirs(log_dir,exist_ok=True)
 
 logging.basicConfig(
 
-    level=logging.INFO,
+    level=logging.ERROR,
     format=logging_str,
 
     handlers=[
